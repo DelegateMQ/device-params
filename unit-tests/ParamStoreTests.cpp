@@ -148,6 +148,88 @@ static void TestNotifyAsync()
     worker.ExitThread();
 }
 
+static void TestNotifyFloodSmallQueue()
+{
+    // A thread with the RTOS default queue size (20) and the FAULT policy.
+    // Without coalescing, the 21st queued change would fault the process.
+    ParamStore store(kPumpParams);
+    store.Init();
+
+    dmq::os::Thread slow("ParamTestSlowSub", dmq::DEFAULT_QUEUE_SIZE, dmq::FullPolicy::FAULT);
+    slow.CreateThread();
+
+    std::atomic<int32_t> last{ -1 };
+    std::atomic<int> calls{ 0 };
+    auto conn = store.Subscribe(P::MaxRpm, [&](int32_t rpm, Source) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));   // slow consumer
+        last = rpm;
+        calls++;
+    }, &slow);
+
+    for (int32_t i = 1; i <= 2000; i++)
+        store.Set(P::MaxRpm, i);
+
+    CHECK(WaitFor([&] { return last.load() == 2000; }));
+    CHECK(calls.load() < 2000);     // intermediate values were coalesced
+    slow.ExitThread();
+}
+
+static void TestUnsubscribeStopsQueuedDelivery()
+{
+    // Disconnecting a thread subscription must stop deliveries already queued
+    // on its thread, so the target can be destroyed right after disconnect.
+    ParamStore store(kPumpParams);
+    store.Init();
+
+    dmq::os::Thread slow("ParamTestUnsub");
+    slow.CreateThread();
+
+    // Block the thread so the next change's delivery stays queued
+    std::atomic<bool> release{ false };
+    auto block = dmq::MakeDelegate(std::function<void()>([&] { while (!release) std::this_thread::yield(); }), slow);
+    block();
+
+    std::atomic<int> lateCalls{ 0 };
+    auto target = std::make_unique<std::atomic<int>>(0);
+    std::atomic<int>* raw = target.get();
+    auto conn = store.Subscribe(P::MaxRpm, [raw, &lateCalls](int32_t, Source) {
+        lateCalls++;
+        (*raw)++;
+    }, &slow);
+
+    store.Set(P::MaxRpm, 1111);     // delivery queued behind the blocker
+    conn.Disconnect();
+    target.reset();                 // target gone; a late delivery would be a use-after-free
+    release = true;
+
+    // Queue a marker behind the pending delivery and wait for it
+    std::atomic<bool> done{ false };
+    auto marker = dmq::MakeDelegate(std::function<void()>([&] { done = true; }), slow);
+    marker();
+    CHECK(WaitFor([&] { return done.load(); }));
+    CHECK(lateCalls.load() == 0);   // (under ASan a late call is also a use-after-free)
+    slow.ExitThread();
+}
+
+static void TestCommitFailedSignal()
+{
+    RamBackend backend;
+    ParamStore store(kPumpParams, &backend);
+    store.Init();
+
+    int failed = 0;
+    auto conn = store.OnCommitFailed.Connect(dmq::MakeDelegate(
+        std::function<void()>([&] { failed++; })));
+
+    store.Set(P::MaxRpm, 1);
+    backend.FailWrites(true);
+    CHECK(!store.Commit());
+    CHECK(failed == 1);
+    backend.FailWrites(false);
+    CHECK(store.Commit());
+    CHECK(failed == 1);
+}
+
 static void TestManualPersistAndReload()
 {
     RamBackend backend;
@@ -351,6 +433,9 @@ int RunParamStoreTests()
     TestValidator();
     TestNotifySync();
     TestNotifyAsync();
+    TestNotifyFloodSmallQueue();
+    TestUnsubscribeStopsQueuedDelivery();
+    TestCommitFailedSignal();
     TestManualPersistAndReload();
     TestImmediate();
     TestDeferred();

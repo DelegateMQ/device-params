@@ -1,4 +1,6 @@
 #include "ParamClient.h"
+#include "ParamStore.h"
+#include <random>
 
 using dmq::databus::DataBus;
 
@@ -6,6 +8,12 @@ namespace param {
 
 ParamClient::ParamClient(const std::string& topicPrefix) : m_topics(topicPrefix)
 {
+    // Every client sees every reply on the topic, so request IDs must not
+    // overlap between clients (or tool processes). Start at a random point:
+    // two clients' ranges then collide only if they start within a few
+    // thousand of each other out of 2^32.
+    std::random_device rd;
+    m_nextRequestId = rd();
 }
 
 ParamClient::~ParamClient()
@@ -15,19 +23,35 @@ ParamClient::~ParamClient()
 
 void ParamClient::Start(dmq::IThread* thread)
 {
+    m_thread = thread;
+    // Every callback goes through the gate, so none can run after Stop()
+    auto gate = std::make_shared<detail::CallbackGate>();
+    m_gate = gate;
+
     m_descConn = DataBus::Subscribe<ParamDescMsg>(m_topics.desc,
-        [this](const ParamDescMsg& msg) { OnDesc(msg); }, thread);
+        [this, gate](const ParamDescMsg& msg) { gate->Run([&] { OnDesc(msg); }); }, thread);
     m_valueConn = DataBus::Subscribe<ParamValueMsg>(m_topics.value,
-        [this](const ParamValueMsg& msg) { OnValue(msg); }, thread);
+        [this, gate](const ParamValueMsg& msg) { gate->Run([&] { OnValue(msg); }); }, thread);
     m_changedConn = DataBus::Subscribe<ParamValueMsg>(m_topics.changed,
-        [this](const ParamValueMsg& msg) { OnChanged(msg); }, thread);
+        [this, gate](const ParamValueMsg& msg) { gate->Run([&] { OnChanged(msg); }); }, thread);
 }
 
 void ParamClient::Stop()
 {
+    // Close first: waits for a callback already running on another thread,
+    // and blocks any delivery that is in flight or still queued
+    if (m_gate)
+        m_gate->Close();
+    m_gate.reset();
+
     m_descConn.Disconnect();
     m_valueConn.Disconnect();
     m_changedConn.Disconnect();
+
+    // Replies queued before the disconnect still call into this object
+    if (m_thread && !m_thread->IsCurrentThread())
+        detail::DrainThread(*m_thread);
+    m_thread = nullptr;
 }
 
 uint32_t ParamClient::NextRequestId()

@@ -70,6 +70,9 @@ public:
     size_t Programs() const { return m_programs; }
     size_t Violations() const { return m_violations; }
 
+protected:
+    std::vector<uint8_t>& RawSector(size_t sector) { return m_sectors[sector]; }
+
 private:
     size_t m_sectorSize;
     size_t m_writeSize;

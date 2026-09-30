@@ -20,6 +20,7 @@
 #include "ParamStore.h"
 #include "ParamMessages.h"
 #include <atomic>
+#include <memory>
 #include <string>
 
 namespace param {
@@ -34,7 +35,15 @@ public:
 
     /// Subscribe to request topics and start publishing changes. Requests are
     /// handled on `thread` (synchronously on the publisher's thread if nullptr).
+    ///
+    /// Requests arrive from outside the device, so give `thread` the
+    /// FullPolicy::DROP policy: a request flood then drops requests (the tool
+    /// sees no reply) instead of faulting the device with the default FAULT.
     void Start(dmq::IThread* thread = nullptr);
+
+    /// Unsubscribe, then wait until requests already queued on the thread have
+    /// run, so the service can be destroyed safely. Do not call Stop() or
+    /// destroy the service on its own thread.
     void Stop();
 
     void AllowRemoteSet(bool allow) { m_allowRemoteSet = allow; }
@@ -52,6 +61,8 @@ private:
     ParamStore&       m_store;
     ParamTopics       m_topics;
     std::atomic<bool> m_allowRemoteSet{ false };
+    dmq::IThread*     m_thread = nullptr;
+    std::shared_ptr<detail::CallbackGate> m_gate;
 
     dmq::ScopedConnection m_listConn;
     dmq::ScopedConnection m_getConn;

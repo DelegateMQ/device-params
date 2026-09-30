@@ -12,7 +12,9 @@
 // @see https://github.com/DelegateMQ/DelegateMQ
 
 #include "ParamMessages.h"
+#include "ParamStore.h"
 #include <atomic>
+#include <memory>
 #include <string>
 
 namespace param {
@@ -27,6 +29,10 @@ public:
 
     /// Subscribe to reply topics. Signals fire on `thread` (synchronously if nullptr).
     void Start(dmq::IThread* thread = nullptr);
+
+    /// Unsubscribe, then wait until replies already queued on the thread have
+    /// run, so the client can be destroyed safely. Do not call Stop() or
+    /// destroy the client on its own thread.
     void Stop();
 
     uint32_t RequestList();
@@ -42,6 +48,8 @@ private:
 
     ParamTopics           m_topics;
     std::atomic<uint32_t> m_nextRequestId{ 1 };
+    dmq::IThread*         m_thread = nullptr;
+    std::shared_ptr<detail::CallbackGate> m_gate;
 
     dmq::ScopedConnection m_descConn;
     dmq::ScopedConnection m_valueConn;
