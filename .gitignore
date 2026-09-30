@@ -1,0 +1,14 @@
+# Build output
+build/
+Build/
+out/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Local test data
+*.db
+*.params
