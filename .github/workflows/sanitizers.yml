@@ -1,0 +1,36 @@
+name: Sanitizers
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  address:
+    name: Linux Clang AddressSanitizer (chaos x5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Lifetime bugs (use-after-free on shutdown, in-flight callbacks) only show
+    # up reliably under a sanitizer; run a longer chaos pass here.
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+        -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+        -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+        -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+
+    - name: Build
+      run: cmake --build build -j
+
+    - name: Run examples, tests and chaos
+      run: ./build/DeviceParamsApp --chaos-scale 5
