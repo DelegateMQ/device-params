@@ -33,12 +33,21 @@ void RunPumpExample()
         store.SetSaveMode(param::SaveMode::Deferred, std::chrono::milliseconds(100), &saveThread);
         store.Init();
 
-        auto conn = store.Subscribe(P::MaxRpm, [](int32_t rpm, param::Source) {
+        std::atomic<int> notified{ 0 };
+        auto conn = store.Subscribe(P::MaxRpm, [&](int32_t rpm, param::Source) {
             std::cout << "  [MotorThread] MaxRpm -> " << rpm << "\n";
+            notified++;
         }, &motorThread);
 
-        std::cout << "Set MaxRpm 4500: " << (store.Set(P::MaxRpm, 4500) == param::SetResult::OK ? "OK" : "failed") << "\n";
-        std::cout << "Set MaxRpm 9000: " << (store.Set(P::MaxRpm, 9000) == param::SetResult::OUT_OF_RANGE ? "OUT_OF_RANGE" : "?") << "\n";
+        // Wait for the MotorThread callback before printing, so the two
+        // threads' output doesn't interleave.
+        bool ok = store.Set(P::MaxRpm, 4500) == param::SetResult::OK;
+        while (ok && notified == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::cout << "Set MaxRpm 4500: " << (ok ? "OK" : "failed") << "\n";
+
+        bool rejected = store.Set(P::MaxRpm, 9000) == param::SetResult::OUT_OF_RANGE;
+        std::cout << "Set MaxRpm 9000: " << (rejected ? "OUT_OF_RANGE" : "?") << "\n";
 
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         std::cout << "Records saved after deferred commit: " << backend.RecordCount() << "\n";
