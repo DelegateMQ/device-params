@@ -90,6 +90,13 @@ Keep the returned connection; letting it go out of scope unsubscribes. A thread 
 store.SetSaveMode(param::SaveMode::Deferred, std::chrono::milliseconds(2000), &saveThread);
 ```
 
+On desktop or embedded Linux, SQLite keeps settings in an ordinary database that any SQLite tool can open (see `examples/SqliteExample.cpp`):
+
+```cpp
+param::SqliteBackend backend("settings.db");
+param::ParamStore store(kParams, &backend);
+```
+
 For flash, implement a small driver for two sectors of your part:
 
 ```cpp

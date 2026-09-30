@@ -3,6 +3,7 @@
 // @see https://github.com/DelegateMQ/DelegateMQ
 
 #include "examples/PumpExample.h"
+#include "examples/SqliteExample.h"
 #include "unit-tests/ParamStoreTests.h"
 #include "unit-tests/ParamServiceTests.h"
 #include "unit-tests/BackendTests.h"
@@ -31,6 +32,7 @@ int main(int argc, char* argv[])
     }
 
     Example::RunPumpExample();
+    Example::RunSqliteExample();
 
     int failures = RunParamStoreTests();
     failures += RunParamServiceTests();

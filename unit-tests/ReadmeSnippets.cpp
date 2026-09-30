@@ -3,6 +3,9 @@
 #include "params/ParamStore.h"
 #include "params/backends/FlashLogBackend.h"
 #include "params/backends/FileBackend.h"
+#ifdef PARAM_BACKEND_SQLITE
+#include "params/backends/SqliteBackend.h"
+#endif
 #ifdef PARAM_REMOTE
 #include "params/ParamService.h"
 #include "params/ParamClient.h"
@@ -51,6 +54,14 @@ void Persistence(param::ParamStore& store, dmq::IThread& saveThread)
 {
     store.SetSaveMode(param::SaveMode::Deferred, std::chrono::milliseconds(2000), &saveThread);
 }
+
+#ifdef PARAM_BACKEND_SQLITE
+void Sqlite()
+{
+    param::SqliteBackend backend("settings.db");
+    param::ParamStore store(kParams, &backend);
+}
+#endif
 
 class MyFlash : public param::IFlash {
 public:
