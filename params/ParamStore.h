@@ -11,7 +11,12 @@
 // - Change signals fire after the lock is released, so a subscriber may call Set.
 // - Synchronous subscribers (no thread) are called once per change on the
 //   setting thread. With concurrent setters, callbacks for the same parameter
-//   can arrive out of order.
+//   can arrive out of order. As with any DelegateMQ Signal, disconnecting does
+//   not wait for a callback already running on another setter's thread; guard
+//   the target's lifetime if it is destroyed right after disconnecting (see
+//   the note in delegate-mq/delegate/Signal.h).
+// - Disconnecting a thread subscriber also drops a delivery already queued on
+//   its thread (one already running still completes).
 // - Thread subscribers are coalesced: each subscription has at most one
 //   message queued on its thread, and delivers the latest value of each
 //   changed parameter. Rapid intermediate values may be skipped, but the last
