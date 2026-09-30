@@ -1,0 +1,39 @@
+name: Embedded
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  cortex-m4:
+    name: Cortex-M4 bare metal (compile only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Compiles the embedded core (ParamStore + FlashLogBackend) for bare metal
+    # with the ARM GNU toolchain. No link or run: the goal is catching code
+    # that only builds on desktop (threads, exceptions, heap-only APIs).
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install ARM GCC toolchain
+      run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+    - name: Compile core
+      run: |
+        for f in params/ParamStore.cpp params/backends/FlashLogBackend.cpp; do
+          echo "Compiling $f"
+          arm-none-eabi-g++ "$f" \
+            -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+            -std=gnu++17 -DDMQ_THREAD_NONE \
+            -c -Os --specs=nano.specs -fno-exceptions -fno-use-cxa-atexit -Wall -Wextra \
+            -I . -I delegate-mq \
+            -o "/tmp/$(basename "$f").o"
+        done
+        arm-none-eabi-size /tmp/*.o

@@ -1,0 +1,36 @@
+name: Linux GCC
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Linux GCC (${{ matrix.remote == 'ON' && 'full' || 'local only' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        remote: [ON, OFF]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+        -DPARAM_REMOTE=${{ matrix.remote }}
+
+    - name: Build
+      run: cmake --build build -j
+
+    - name: Run examples and tests
+      run: ./build/DeviceParamsApp
