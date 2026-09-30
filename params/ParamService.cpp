@@ -1,5 +1,4 @@
 #include "ParamService.h"
-#include <algorithm>
 
 using dmq::databus::DataBus;
 

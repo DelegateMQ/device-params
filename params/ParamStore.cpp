@@ -48,10 +48,12 @@ ParamStore::~ParamStore()
     // save thread before this object goes away.
     m_saveTimer.Stop();
     m_saveTimerConn.Disconnect();
+#if PARAM_HAS_THREADS
     if (m_saveThread && !m_saveThread->IsCurrentThread()) {
         auto drain = dmq::MakeDelegate(+[]() {}, *m_saveThread, dmq::WAIT_INFINITE);
         drain();
     }
+#endif
     Commit();
 }
 
@@ -108,7 +110,9 @@ void ParamStore::OnLoadRecord(const Record& rec)
 
 void ParamStore::SetSaveMode(SaveMode mode, std::chrono::milliseconds delay, dmq::IThread* saveThread)
 {
-    DMQ_ASSERT_TRUE(mode != SaveMode::Deferred || saveThread != nullptr);
+#if !PARAM_HAS_THREADS
+    DMQ_ASSERT_TRUE(saveThread == nullptr);
+#endif
 
     m_saveTimer.Stop();
     m_saveTimerConn.Disconnect();
@@ -118,10 +122,21 @@ void ParamStore::SetSaveMode(SaveMode mode, std::chrono::milliseconds delay, dmq
     m_saveDelay = delay;
     m_saveThread = saveThread;
     m_saveScheduled = false;
+    m_saveDue = false;
 
-    if (mode == SaveMode::Deferred)
+    if (mode != SaveMode::Deferred)
+        return;
+#if PARAM_HAS_THREADS
+    if (saveThread) {
         m_saveTimerConn = m_saveTimer.OnExpired.Connect(
             dmq::MakeDelegate(this, &ParamStore::OnSaveTimer, *saveThread));
+        return;
+    }
+#endif
+    // Poll mode: runs in the ProcessTimers() context (possibly an ISR), so
+    // only set a flag; Poll() does the write.
+    m_saveTimerConn = m_saveTimer.OnExpired.Connect(
+        dmq::MakeDelegate(this, &ParamStore::OnSaveDue));
 }
 
 int ParamStore::IndexOf(ParamId id) const
@@ -222,6 +237,18 @@ void ParamStore::OnSaveTimer()
 {
     // Runs on the save thread
     Commit();
+}
+
+void ParamStore::OnSaveDue()
+{
+    m_saveDue = true;
+}
+
+bool ParamStore::Poll()
+{
+    if (!m_saveDue.exchange(false))
+        return false;
+    return Commit();
 }
 
 void ParamStore::Reject(ParamId id, SetResult r, Source src)

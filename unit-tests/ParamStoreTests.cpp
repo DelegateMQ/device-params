@@ -216,6 +216,30 @@ static void TestDeferred()
     saveThread.ExitThread();
 }
 
+static void TestDeferredPoll()
+{
+    // No save thread: the timer only marks the save due; Poll() writes it
+    RamBackend backend;
+    ParamStore store(kPumpParams, &backend);
+    store.Init();
+    store.SetSaveMode(SaveMode::Deferred, std::chrono::milliseconds(20));
+
+    CHECK(!store.Poll());                    // nothing due
+    store.Set(P::MaxRpm, 100);
+    store.Set(P::PidKp, 0.5f);
+    CHECK(!store.Poll());                    // not due yet
+    CHECK(backend.WriteCount() == 0);
+
+    // Timer expiry alone must not write (it may run in an ISR)
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    dmq::util::Timer::ProcessTimers();
+    CHECK(backend.WriteCount() == 0);
+
+    CHECK(store.Poll());
+    CHECK(backend.WriteCount() == 1 && backend.RecordCount() == 2);
+    CHECK(!store.Poll());                    // one save per due
+}
+
 static void TestCommitFailure()
 {
     RamBackend backend;
@@ -330,6 +354,7 @@ int RunParamStoreTests()
     TestManualPersistAndReload();
     TestImmediate();
     TestDeferred();
+    TestDeferredPoll();
     TestCommitFailure();
     TestLoadRejections();
     TestResetToDefaults();

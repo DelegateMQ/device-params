@@ -12,13 +12,18 @@
 // - Subscribers receive callbacks on the thread they pass to Subscribe(), or
 //   synchronously on the setting thread when no thread is given.
 // - Not ISR-safe.
+// - Bare metal (DMQ_THREAD_NONE): no threads, so callbacks are always
+//   synchronous (passing a thread asserts) and Deferred saves use Poll().
 //
 // Persistence:
 // - Manual:    only Commit() writes to the backend.
 // - Immediate: Set() commits on the calling thread before returning.
-// - Deferred:  the first unsaved change starts a one-shot dmq::util::Timer;
-//              when it expires, Commit() runs on the save thread. The app must
-//              call dmq::util::Timer::ProcessTimers() periodically.
+// - Deferred:  the first unsaved change starts a one-shot dmq::util::Timer.
+//              When it expires, Commit() runs on the save thread, or, with no
+//              save thread, the save becomes due and the app's next Poll()
+//              call commits it (keeps flash writes out of the timer/ISR
+//              context). The app must call dmq::util::Timer::ProcessTimers()
+//              periodically.
 // - The destructor drains any queued deferred save and commits what is left.
 //   Do not destroy a store on its own save thread.
 //
@@ -28,7 +33,9 @@
 #include "backends/IBackend.h"
 #include "delegate-mq/DelegateMQ.h"
 #include "delegate-mq/extras/util/Timer.h"
+#include "delegate-mq/extras/util/Fault.h"
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <functional>
@@ -64,7 +71,8 @@ public:
     /// with Source::Load and keep the default.
     void Init();
 
-    /// @param saveThread  Required for Deferred: the thread that runs Commit().
+    /// @param saveThread  Deferred only: the thread that runs Commit(). If
+    ///                    nullptr, Commit() runs from Poll() once the save is due.
     void SetSaveMode(SaveMode mode,
                      std::chrono::milliseconds delay = std::chrono::milliseconds(SAVE_DELAY_MS),
                      dmq::IThread* saveThread = nullptr);
@@ -98,12 +106,16 @@ public:
         CheckKey(key.id, TypeOf<T>::tag);
         std::function<void(T, Source)> target(std::forward<F>(fn));
         const ParamId id = key.id;
+#if PARAM_HAS_THREADS
         if (thread) {
             auto async = dmq::DelegateFunctionAsync<void(T, Source)>(target, *thread);
             return m_onChanged.Connect(ChangedDelegate([id, async](ParamId pid, Value v, Source s) mutable {
                 if (pid == id) async(v.template As<T>(), s);
             }));
         }
+#else
+        DMQ_ASSERT_TRUE(thread == nullptr);
+#endif
         return m_onChanged.Connect(ChangedDelegate([id, target](ParamId pid, Value v, Source s) {
             if (pid == id) target(v.template As<T>(), s);
         }));
@@ -113,8 +125,12 @@ public:
     template <class F>
     [[nodiscard]] dmq::ScopedConnection SubscribeAny(F&& fn, dmq::IThread* thread = nullptr) {
         std::function<void(ParamId, Value, Source)> target(std::forward<F>(fn));
+#if PARAM_HAS_THREADS
         if (thread)
             return m_onChanged.Connect(dmq::DelegateFunctionAsync<void(ParamId, Value, Source)>(target, *thread));
+#else
+        DMQ_ASSERT_TRUE(thread == nullptr);
+#endif
         return m_onChanged.Connect(ChangedDelegate(target));
     }
 
@@ -122,6 +138,10 @@ public:
     /// reject with SetResult::REJECTED). Runs under the store lock on the
     /// setting thread; may call Get, must not block.
     void SetValidator(const dmq::UnicastDelegate<bool(ParamId, const Value&)>& validator);
+
+    /// Deferred mode without a save thread: commit if a deferred save is due.
+    /// Call from the main loop / a low-priority task. Returns true if it committed.
+    bool Poll();
 
     /// Write unsaved PERSIST changes to the backend now. Returns false on a
     /// backend error (changes stay unsaved and are retried on the next commit).
@@ -148,6 +168,7 @@ private:
     void       OnLoadRecord(const Record& rec);
     void       ScheduleSave();
     void       OnSaveTimer();
+    void       OnSaveDue();
     void       Reject(ParamId id, SetResult r, Source src);
 
     const Def* m_defs;
@@ -161,6 +182,7 @@ private:
     dmq::IThread* m_saveThread = nullptr;
     std::chrono::milliseconds m_saveDelay{ SAVE_DELAY_MS };
     bool          m_saveScheduled = false;
+    std::atomic<bool> m_saveDue{ false };
     dmq::util::Timer      m_saveTimer;
     dmq::ScopedConnection m_saveTimerConn;
 

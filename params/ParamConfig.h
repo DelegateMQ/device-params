@@ -23,6 +23,14 @@
 // Define to compile parameter names out of Def (tools then use IDs only).
 // #define PARAM_NO_NAMES
 
+// Thread support follows DelegateMQ: bare metal (DMQ_THREAD_NONE) has no
+// dmq::IThread, so thread-dispatched callbacks and save threads are disabled.
+#if defined(DMQ_THREAD_NONE)
+#define PARAM_HAS_THREADS 0
+#else
+#define PARAM_HAS_THREADS 1
+#endif
+
 namespace param {
 
 /// Maximum parameters per store. See PARAM_MAX_COUNT.

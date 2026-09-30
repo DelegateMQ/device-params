@@ -5,6 +5,7 @@
 #include "examples/PumpExample.h"
 #include "unit-tests/ParamStoreTests.h"
 #include "unit-tests/ParamServiceTests.h"
+#include "unit-tests/BackendTests.h"
 #include "delegate-mq/DelegateMQ.h"
 #include <iostream>
 
@@ -14,5 +15,6 @@ int main()
 
     int failures = RunParamStoreTests();
     failures += RunParamServiceTests();
+    failures += RunBackendTests();
     return failures == 0 ? 0 : 1;
 }
