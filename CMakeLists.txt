@@ -1,7 +1,7 @@
 # Example CMake command line to create project build files:
 #
 # cmake -B build .
-# cmake -B build -DPARAM_BACKEND_SQLITE=ON -DPARAM_REMOTE=OFF .
+# cmake -B build -DPARAM_BACKEND_SQLITE=OFF -DPARAM_REMOTE=OFF .
 
 cmake_minimum_required(VERSION 3.10)
 
@@ -10,9 +10,19 @@ project(DeviceParams VERSION 0.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Standard C file APIs (fopen etc.) are used for portability
+if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 # device-params options
 option(PARAM_REMOTE         "Build ParamService/ParamClient (remote access over DataBus)" ON)
-option(PARAM_BACKEND_SQLITE "Build SqliteBackend (needs third-party/sqlite)"  OFF)
+if(EXISTS "${CMAKE_SOURCE_DIR}/third-party/sqlite/sqlite3.c")
+    set(PARAM_SQLITE_DEFAULT ON)
+else()
+    set(PARAM_SQLITE_DEFAULT OFF)
+endif()
+option(PARAM_BACKEND_SQLITE "Build SqliteBackend (needs third-party/sqlite)" ${PARAM_SQLITE_DEFAULT})
 
 # DelegateMQ build options
 set(DMQ_ALLOCATOR "OFF")
@@ -88,6 +98,12 @@ include_directories(
 )
 if(PARAM_BACKEND_SQLITE)
     include_directories(${CMAKE_SOURCE_DIR}/third-party/sqlite)
+    # Third-party C source: build without project warnings
+    if(MSVC)
+        set_source_files_properties(${CMAKE_SOURCE_DIR}/third-party/sqlite/sqlite3.c PROPERTIES COMPILE_OPTIONS "/W0")
+    else()
+        set_source_files_properties(${CMAKE_SOURCE_DIR}/third-party/sqlite/sqlite3.c PROPERTIES COMPILE_OPTIONS "-w")
+    endif()
 endif()
 
 add_executable(DeviceParamsApp ${SOURCES} ${DMQ_LIB_SOURCES})
@@ -95,3 +111,10 @@ add_executable(DeviceParamsApp ${SOURCES} ${DMQ_LIB_SOURCES})
 if(PARAM_REMOTE)
     target_compile_definitions(DeviceParamsApp PRIVATE PARAM_REMOTE)
 endif()
+if(PARAM_BACKEND_SQLITE)
+    target_compile_definitions(DeviceParamsApp PRIVATE PARAM_BACKEND_SQLITE)
+    target_link_libraries(DeviceParamsApp PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
+find_package(Threads REQUIRED)
+target_link_libraries(DeviceParamsApp PRIVATE Threads::Threads)

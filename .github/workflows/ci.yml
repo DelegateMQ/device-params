@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  windows:
+    name: Windows (MSVC)
+    runs-on: windows-2022
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: cmake -S . -B build
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Run examples and tests
+      run: .\build\Release\DeviceParamsApp.exe
+
+  linux:
+    name: Linux (${{ matrix.compiler }}${{ matrix.remote == 'OFF' && ', local only' || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            remote: ON
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+            remote: ON
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            remote: OFF
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+        -DPARAM_REMOTE=${{ matrix.remote }}
+
+    - name: Build
+      run: cmake --build build -j
+
+    - name: Run examples and tests
+      run: ./build/DeviceParamsApp
+
+  sanitizer:
+    name: Linux (Clang, AddressSanitizer, chaos x5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Lifetime bugs (use-after-free on shutdown, in-flight callbacks) only show
+    # up reliably under a sanitizer; run a longer chaos pass here.
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure CMake
+      run: >
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+        -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+        -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+        -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address"
+
+    - name: Build
+      run: cmake --build build -j
+
+    - name: Run examples, tests and chaos
+      run: ./build/DeviceParamsApp --chaos-scale 5
+
+  arm:
+    name: Cortex-M4 bare metal (compile only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Compiles the embedded core (ParamStore + FlashLogBackend) for bare metal
+    # with the ARM GNU toolchain. No link or run: the goal is catching code
+    # that only builds on desktop (threads, exceptions, heap-only APIs).
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install ARM GCC toolchain
+      run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+
+    - name: Compile core
+      run: |
+        for f in params/ParamStore.cpp params/backends/FlashLogBackend.cpp; do
+          echo "Compiling $f"
+          arm-none-eabi-g++ "$f" \
+            -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+            -std=gnu++17 -DDMQ_THREAD_NONE \
+            -c -Os --specs=nano.specs -fno-exceptions -fno-use-cxa-atexit -Wall -Wextra \
+            -I . -I delegate-mq \
+            -o "/tmp/$(basename "$f").o"
+        done
+        arm-none-eabi-size /tmp/*.o

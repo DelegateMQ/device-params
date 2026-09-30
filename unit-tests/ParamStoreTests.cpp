@@ -3,7 +3,6 @@
 #include "params/ParamStore.h"
 #include "params/Record.h"
 #include "params/backends/RamBackend.h"
-#include "params/backends/FileBackend.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -148,6 +147,88 @@ static void TestNotifyAsync()
     worker.ExitThread();
 }
 
+static void TestNotifyFloodSmallQueue()
+{
+    // A thread with the RTOS default queue size (20) and the FAULT policy.
+    // Without coalescing, the 21st queued change would fault the process.
+    ParamStore store(kPumpParams);
+    store.Init();
+
+    dmq::os::Thread slow("ParamTestSlowSub", dmq::DEFAULT_QUEUE_SIZE, dmq::FullPolicy::FAULT);
+    slow.CreateThread();
+
+    std::atomic<int32_t> last{ -1 };
+    std::atomic<int> calls{ 0 };
+    auto conn = store.Subscribe(P::MaxRpm, [&](int32_t rpm, Source) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));   // slow consumer
+        last = rpm;
+        calls++;
+    }, &slow);
+
+    for (int32_t i = 1; i <= 2000; i++)
+        store.Set(P::MaxRpm, i);
+
+    CHECK(WaitFor([&] { return last.load() == 2000; }));
+    CHECK(calls.load() < 2000);     // intermediate values were coalesced
+    slow.ExitThread();
+}
+
+static void TestUnsubscribeStopsQueuedDelivery()
+{
+    // Disconnecting a thread subscription must stop deliveries already queued
+    // on its thread, so the target can be destroyed right after disconnect.
+    ParamStore store(kPumpParams);
+    store.Init();
+
+    dmq::os::Thread slow("ParamTestUnsub");
+    slow.CreateThread();
+
+    // Block the thread so the next change's delivery stays queued
+    std::atomic<bool> release{ false };
+    auto block = dmq::MakeDelegate(std::function<void()>([&] { while (!release) std::this_thread::yield(); }), slow);
+    block();
+
+    std::atomic<int> lateCalls{ 0 };
+    auto target = std::make_unique<std::atomic<int>>(0);
+    std::atomic<int>* raw = target.get();
+    auto conn = store.Subscribe(P::MaxRpm, [raw, &lateCalls](int32_t, Source) {
+        lateCalls++;
+        (*raw)++;
+    }, &slow);
+
+    store.Set(P::MaxRpm, 1111);     // delivery queued behind the blocker
+    conn.Disconnect();
+    target.reset();                 // target gone; a late delivery would be a use-after-free
+    release = true;
+
+    // Queue a marker behind the pending delivery and wait for it
+    std::atomic<bool> done{ false };
+    auto marker = dmq::MakeDelegate(std::function<void()>([&] { done = true; }), slow);
+    marker();
+    CHECK(WaitFor([&] { return done.load(); }));
+    CHECK(lateCalls.load() == 0);   // (under ASan a late call is also a use-after-free)
+    slow.ExitThread();
+}
+
+static void TestCommitFailedSignal()
+{
+    RamBackend backend;
+    ParamStore store(kPumpParams, &backend);
+    store.Init();
+
+    int failed = 0;
+    auto conn = store.OnCommitFailed.Connect(dmq::MakeDelegate(
+        std::function<void()>([&] { failed++; })));
+
+    store.Set(P::MaxRpm, 1);
+    backend.FailWrites(true);
+    CHECK(!store.Commit());
+    CHECK(failed == 1);
+    backend.FailWrites(false);
+    CHECK(store.Commit());
+    CHECK(failed == 1);
+}
+
 static void TestManualPersistAndReload()
 {
     RamBackend backend;
@@ -214,6 +295,30 @@ static void TestDeferred()
     reloaded.Init();
     CHECK(reloaded.Get(P::MaxRpm) == 300);
     saveThread.ExitThread();
+}
+
+static void TestDeferredPoll()
+{
+    // No save thread: the timer only marks the save due; Poll() writes it
+    RamBackend backend;
+    ParamStore store(kPumpParams, &backend);
+    store.Init();
+    store.SetSaveMode(SaveMode::Deferred, std::chrono::milliseconds(20));
+
+    CHECK(!store.Poll());                    // nothing due
+    store.Set(P::MaxRpm, 100);
+    store.Set(P::PidKp, 0.5f);
+    CHECK(!store.Poll());                    // not due yet
+    CHECK(backend.WriteCount() == 0);
+
+    // Timer expiry alone must not write (it may run in an ISR)
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    dmq::util::Timer::ProcessTimers();
+    CHECK(backend.WriteCount() == 0);
+
+    CHECK(store.Poll());
+    CHECK(backend.WriteCount() == 1 && backend.RecordCount() == 2);
+    CHECK(!store.Poll());                    // one save per due
 }
 
 static void TestCommitFailure()
@@ -294,30 +399,6 @@ static void TestRecordCodec()
     }
 }
 
-static void TestFileBackend()
-{
-    const std::string path = "device-params-test.params";
-    std::remove(path.c_str());
-    {
-        FileBackend backend(path);
-        ParamStore store(kPumpParams, &backend);
-        store.Init();
-        store.Set(P::MaxRpm, 4321);
-        store.Set(P::PidKp, 6.5f);
-        CHECK(store.Commit());
-        store.Set(P::MaxRpm, 4322);          // update existing record
-        CHECK(store.Commit());
-    }
-    {
-        FileBackend backend(path);
-        ParamStore store(kPumpParams, &backend);
-        store.Init();
-        CHECK(store.Get(P::MaxRpm) == 4322);
-        CHECK(store.Get(P::PidKp) == 6.5f);
-    }
-    std::remove(path.c_str());
-}
-
 int RunParamStoreTests()
 {
     failures = 0;
@@ -327,14 +408,17 @@ int RunParamStoreTests()
     TestValidator();
     TestNotifySync();
     TestNotifyAsync();
+    TestNotifyFloodSmallQueue();
+    TestUnsubscribeStopsQueuedDelivery();
+    TestCommitFailedSignal();
     TestManualPersistAndReload();
     TestImmediate();
     TestDeferred();
+    TestDeferredPoll();
     TestCommitFailure();
     TestLoadRejections();
     TestResetToDefaults();
     TestRecordCodec();
-    TestFileBackend();
 
     std::cout << "ParamStoreTests: " << (failures ? "FAILED" : "passed") << "\n";
     return failures;

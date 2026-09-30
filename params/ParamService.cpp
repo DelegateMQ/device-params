@@ -1,5 +1,4 @@
 #include "ParamService.h"
-#include <algorithm>
 
 using dmq::databus::DataBus;
 
@@ -17,24 +16,42 @@ ParamService::~ParamService()
 
 void ParamService::Start(dmq::IThread* thread)
 {
+    m_thread = thread;
+    // Every callback goes through the gate, so none can run after Stop()
+    auto gate = std::make_shared<detail::CallbackGate>();
+    m_gate = gate;
+
     m_listConn = DataBus::Subscribe<ParamListReq>(m_topics.list,
-        [this](const ParamListReq& req) { OnList(req); }, thread);
+        [this, gate](const ParamListReq& req) { gate->Run([&] { OnList(req); }); }, thread);
     m_getConn = DataBus::Subscribe<ParamGetReq>(m_topics.get,
-        [this](const ParamGetReq& req) { OnGet(req); }, thread);
+        [this, gate](const ParamGetReq& req) { gate->Run([&] { OnGet(req); }); }, thread);
     m_setConn = DataBus::Subscribe<ParamSetReq>(m_topics.set,
-        [this](const ParamSetReq& req) { OnSet(req); }, thread);
+        [this, gate](const ParamSetReq& req) { gate->Run([&] { OnSet(req); }); }, thread);
 
     // Published on the thread that made the change
-    m_changedConn = m_store.SubscribeAny(
-        [this](ParamId id, Value v, Source src) { OnChanged(id, v, src); });
+    m_changedConn = m_store.SubscribeAny([this, gate](ParamId id, Value v, Source src) {
+        gate->Run([&] { OnChanged(id, v, src); });
+    });
 }
 
 void ParamService::Stop()
 {
+    // Close first: waits for a callback already running on another thread,
+    // and blocks any delivery that is in flight or still queued
+    if (m_gate)
+        m_gate->Close();
+    m_gate.reset();
+
     m_listConn.Disconnect();
     m_getConn.Disconnect();
     m_setConn.Disconnect();
     m_changedConn.Disconnect();
+
+    // Also let queued requests finish (they now return at the gate), so the
+    // thread holds no messages referring to this object
+    if (m_thread && !m_thread->IsCurrentThread())
+        detail::DrainThread(*m_thread);
+    m_thread = nullptr;
 }
 
 const Def* ParamService::Visible(ParamId id) const
