@@ -6,7 +6,6 @@
 [![Embedded](https://github.com/DelegateMQ/device-params/actions/workflows/embedded.yml/badge.svg)](https://github.com/DelegateMQ/device-params/actions/workflows/embedded.yml)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20RTOS%20%7C%20Bare--Metal-informational)
-![Status](https://img.shields.io/badge/status-early-orange)
 
 # Device Params in C++
 
