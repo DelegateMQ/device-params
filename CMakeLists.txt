@@ -10,6 +10,11 @@ project(DeviceParams VERSION 0.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Standard C file APIs (fopen etc.) are used for portability
+if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 # device-params options
 option(PARAM_REMOTE         "Build ParamService/ParamClient (remote access over DataBus)" ON)
 if(EXISTS "${CMAKE_SOURCE_DIR}/third-party/sqlite/sqlite3.c")

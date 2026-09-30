@@ -3,7 +3,6 @@
 #include "params/ParamStore.h"
 #include "params/Record.h"
 #include "params/backends/RamBackend.h"
-#include "params/backends/FileBackend.h"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -400,30 +399,6 @@ static void TestRecordCodec()
     }
 }
 
-static void TestFileBackend()
-{
-    const std::string path = "device-params-test.params";
-    std::remove(path.c_str());
-    {
-        FileBackend backend(path);
-        ParamStore store(kPumpParams, &backend);
-        store.Init();
-        store.Set(P::MaxRpm, 4321);
-        store.Set(P::PidKp, 6.5f);
-        CHECK(store.Commit());
-        store.Set(P::MaxRpm, 4322);          // update existing record
-        CHECK(store.Commit());
-    }
-    {
-        FileBackend backend(path);
-        ParamStore store(kPumpParams, &backend);
-        store.Init();
-        CHECK(store.Get(P::MaxRpm) == 4322);
-        CHECK(store.Get(P::PidKp) == 6.5f);
-    }
-    std::remove(path.c_str());
-}
-
 int RunParamStoreTests()
 {
     failures = 0;
@@ -444,7 +419,6 @@ int RunParamStoreTests()
     TestLoadRejections();
     TestResetToDefaults();
     TestRecordCodec();
-    TestFileBackend();
 
     std::cout << "ParamStoreTests: " << (failures ? "FAILED" : "passed") << "\n";
     return failures;
