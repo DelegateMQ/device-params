@@ -20,7 +20,7 @@ jobs:
     # that only builds on desktop (threads, exceptions, heap-only APIs).
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install ARM GCC toolchain
       run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
