@@ -2,8 +2,13 @@
 #
 # cmake -B build .
 # cmake -B build -DPARAM_BACKEND_SQLITE=OFF -DPARAM_REMOTE=OFF .
+#
+# DelegateMQ is fetched from GitHub at the release tag DMQ_GIT_TAG when CMake
+# configures. To build against a local DelegateMQ checkout instead, add
+# -DFETCHCONTENT_SOURCE_DIR_DELEGATEMQ=<path>. To configure again without
+# network access, add -DFETCHCONTENT_FULLY_DISCONNECTED=ON.
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
 project(DeviceParams VERSION 0.1 LANGUAGES C CXX)
 
@@ -36,7 +41,18 @@ else()
     set(DMQ_DATABUS "OFF")
     set(DMQ_SERIALIZE "DMQ_SERIALIZE_NONE")
 endif()
-include("${CMAKE_SOURCE_DIR}/delegate-mq/DelegateMQ.cmake")
+
+# DelegateMQ release to build against (.github/workflows/embedded.yml reads it too)
+set(DMQ_GIT_TAG "v2.4.1" CACHE STRING "DelegateMQ release tag (or branch) to fetch")
+
+include(FetchContent)
+FetchContent_Declare(
+    delegatemq
+    GIT_REPOSITORY https://github.com/DelegateMQ/DelegateMQ.git
+    GIT_TAG        ${DMQ_GIT_TAG}
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(delegatemq)
 
 # Library sources
 set(PARAM_SOURCES
@@ -81,20 +97,16 @@ file(GLOB EXAMPLE_SOURCES "${CMAKE_SOURCE_DIR}/examples/*.cpp"
 file(GLOB TEST_SOURCES    "${CMAKE_SOURCE_DIR}/unit-tests/*.cpp"
                           "${CMAKE_SOURCE_DIR}/unit-tests/*.h")
 
-list(APPEND SOURCES ${PARAM_SOURCES} ${BACKEND_SOURCES} ${EXAMPLE_SOURCES} ${TEST_SOURCES} ${DMQ_PORT_SOURCES})
+list(APPEND SOURCES ${PARAM_SOURCES} ${BACKEND_SOURCES} ${EXAMPLE_SOURCES} ${TEST_SOURCES})
 
 # Organize files in IDE (Visual Studio Solution Explorer)
 source_group("Params"         FILES ${PARAM_SOURCES})
 source_group("Backends"       FILES ${BACKEND_SOURCES})
 source_group("Examples"       FILES ${EXAMPLE_SOURCES})
 source_group("Unit Tests"     FILES ${TEST_SOURCES})
-source_group("Delegate Files" FILES ${DMQ_LIB_SOURCES})
-source_group("Port Files"     FILES ${DMQ_PORT_ONLY_SOURCES})
-source_group("Extras Files"   FILES ${DMQ_EXTRAS_SOURCES})
 
 include_directories(
     ${CMAKE_SOURCE_DIR}
-    ${DMQ_INCLUDE_DIR}
 )
 if(PARAM_BACKEND_SQLITE)
     include_directories(${CMAKE_SOURCE_DIR}/third-party/sqlite)
@@ -106,7 +118,10 @@ if(PARAM_BACKEND_SQLITE)
     endif()
 endif()
 
-add_executable(DeviceParamsApp ${SOURCES} ${DMQ_LIB_SOURCES})
+add_executable(DeviceParamsApp ${SOURCES})
+
+# DelegateMQ's include directories, compile definitions and library
+target_link_libraries(DeviceParamsApp PRIVATE DelegateMQ::DelegateMQ)
 
 if(PARAM_REMOTE)
     target_compile_definitions(DeviceParamsApp PRIVATE PARAM_REMOTE)

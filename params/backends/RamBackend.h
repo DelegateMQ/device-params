@@ -9,7 +9,7 @@
 // @see https://github.com/DelegateMQ/DelegateMQ
 
 #include "IBackend.h"
-#include "delegate-mq/extras/util/Fault.h"
+#include "extras/util/Fault.h"
 #include <array>
 
 namespace param {

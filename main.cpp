@@ -8,7 +8,7 @@
 #include "unit-tests/ParamServiceTests.h"
 #include "unit-tests/BackendTests.h"
 #include "unit-tests/ChaosTests.h"
-#include "delegate-mq/DelegateMQ.h"
+#include "DelegateMQ.h"
 #include <cstdlib>
 #include <cstring>
 #include <iostream>

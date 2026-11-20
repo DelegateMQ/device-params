@@ -22,6 +22,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v7
 
+    - name: Read the pinned DelegateMQ tag
+      id: dmq
+      run: echo "tag=$(sed -n 's/^set(DMQ_GIT_TAG \"\([^\"]*\)\".*/\1/p' CMakeLists.txt)" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout DelegateMQ
+      uses: actions/checkout@v7
+      with:
+        repository: DelegateMQ/DelegateMQ
+        ref: ${{ steps.dmq.outputs.tag }}
+        path: _deps/delegatemq
+
     - name: Install ARM GCC toolchain
       run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
 
@@ -33,7 +44,7 @@ jobs:
             -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
             -std=gnu++17 -DDMQ_THREAD_NONE \
             -c -Os --specs=nano.specs -fno-exceptions -fno-use-cxa-atexit -Wall -Wextra \
-            -I . -I delegate-mq \
+            -I . -I _deps/delegatemq/src/delegate-mq \
             -o "/tmp/$(basename "$f").o"
         done
         arm-none-eabi-size /tmp/*.o
