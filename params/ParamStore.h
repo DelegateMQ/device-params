@@ -14,7 +14,7 @@
 //   can arrive out of order. As with any DelegateMQ Signal, disconnecting does
 //   not wait for a callback already running on another setter's thread; guard
 //   the target's lifetime if it is destroyed right after disconnecting (see
-//   the note in delegate-mq/delegate/Signal.h).
+//   the note in DelegateMQ's delegate/Signal.h).
 // - Disconnecting a thread subscriber also drops a delivery already queued on
 //   its thread (one already running still completes).
 // - Thread subscribers are coalesced: each subscription has at most one
@@ -42,9 +42,9 @@
 
 #include "Param.h"
 #include "backends/IBackend.h"
-#include "delegate-mq/DelegateMQ.h"
-#include "delegate-mq/extras/util/Timer.h"
-#include "delegate-mq/extras/util/Fault.h"
+#include "DelegateMQ.h"
+#include "extras/util/Timer.h"
+#include "extras/util/Fault.h"
 #include <array>
 #include <atomic>
 #include <chrono>

@@ -149,14 +149,15 @@ Remote sets go through the same range checks as local ones.
 
 ## Building
 
-Requires a C++17 compiler and CMake 3.10+. DelegateMQ is included under `delegate-mq/`.
+Requires a C++17 compiler and CMake 3.16+. [DelegateMQ](https://github.com/DelegateMQ/DelegateMQ) is fetched from GitHub by CMake's `FetchContent` when CMake configures, at the release tag set by `DMQ_GIT_TAG` in `CMakeLists.txt` (currently `v2.4.1`), and the app links the `DelegateMQ::DelegateMQ` target. To build against a local DelegateMQ checkout, add `-DFETCHCONTENT_SOURCE_DIR_DELEGATEMQ=<path>`; to configure again offline, `-DFETCHCONTENT_FULLY_DISCONNECTED=ON`.
 
 | CMake option | Default | Effect |
 | :--- | :--- | :--- |
 | `PARAM_REMOTE` | `ON` | Build remote access (`ParamService`, `ParamClient`) |
 | `PARAM_BACKEND_SQLITE` | `ON` if SQLite is present | Build the SQLite backend |
+| `DMQ_GIT_TAG` | `v2.4.1` | DelegateMQ release (or branch) to fetch |
 
-To use it in your project, add `params/` and `delegate-mq/` to your build. On a microcontroller the core is `ParamStore.cpp` plus a backend such as `FlashLogBackend.cpp`.
+To use it in your project, add `params/` to your build and add DelegateMQ as described in its [build guide](https://github.com/DelegateMQ/DelegateMQ/blob/master/docs/BUILD.md), with its `src/delegate-mq` folder on the include path. On a microcontroller the core is `ParamStore.cpp` plus a backend such as `FlashLogBackend.cpp`.
 
 ## Testing
 

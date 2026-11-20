@@ -8,7 +8,7 @@
 // @see https://github.com/DelegateMQ/DelegateMQ
 
 #include "../Param.h"
-#include "delegate-mq/DelegateMQ.h"
+#include "DelegateMQ.h"
 #include <cstddef>
 #include <cstdint>
 
