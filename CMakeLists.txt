@@ -43,7 +43,7 @@ else()
 endif()
 
 # DelegateMQ release to build against (.github/workflows/embedded.yml reads it too)
-set(DMQ_GIT_TAG "v2.4.1" CACHE STRING "DelegateMQ release tag (or branch) to fetch")
+set(DMQ_GIT_TAG "v3.0.0" CACHE STRING "DelegateMQ release tag (or branch) to fetch")
 
 include(FetchContent)
 FetchContent_Declare(

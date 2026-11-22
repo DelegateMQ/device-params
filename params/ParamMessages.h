@@ -71,8 +71,8 @@ struct ParamListReq PARAM_MSG_BASE {
     uint32_t requestId = 0;
 
 #if defined(DMQ_SERIALIZE_SERIALIZE)
-    std::istream& read(serialize& ms, std::istream& is) PARAM_MSG_OVERRIDE { return ms.read(is, requestId); }
-    std::ostream& write(serialize& ms, std::ostream& os) PARAM_MSG_OVERRIDE { return ms.write(os, requestId); }
+    dmq::ByteReader& read(serialize& ms, dmq::ByteReader& is) PARAM_MSG_OVERRIDE { return ms.read(is, requestId); }
+    dmq::ByteWriter& write(serialize& ms, dmq::ByteWriter& os) PARAM_MSG_OVERRIDE { return ms.write(os, requestId); }
 #endif
 };
 
@@ -81,11 +81,11 @@ struct ParamGetReq PARAM_MSG_BASE {
     ParamId  id = 0;
 
 #if defined(DMQ_SERIALIZE_SERIALIZE)
-    std::istream& read(serialize& ms, std::istream& is) PARAM_MSG_OVERRIDE {
+    dmq::ByteReader& read(serialize& ms, dmq::ByteReader& is) PARAM_MSG_OVERRIDE {
         ms.read(is, requestId);
         return ms.read(is, id);
     }
-    std::ostream& write(serialize& ms, std::ostream& os) PARAM_MSG_OVERRIDE {
+    dmq::ByteWriter& write(serialize& ms, dmq::ByteWriter& os) PARAM_MSG_OVERRIDE {
         ms.write(os, requestId);
         return ms.write(os, id);
     }
@@ -102,13 +102,13 @@ struct ParamSetReq PARAM_MSG_BASE {
     void  SetValue(const Value& v) { type = static_cast<uint8_t>(v.type); bits = ToBits(v); }
 
 #if defined(DMQ_SERIALIZE_SERIALIZE)
-    std::istream& read(serialize& ms, std::istream& is) PARAM_MSG_OVERRIDE {
+    dmq::ByteReader& read(serialize& ms, dmq::ByteReader& is) PARAM_MSG_OVERRIDE {
         ms.read(is, requestId);
         ms.read(is, id);
         ms.read(is, type);
         return ms.read(is, bits);
     }
-    std::ostream& write(serialize& ms, std::ostream& os) PARAM_MSG_OVERRIDE {
+    dmq::ByteWriter& write(serialize& ms, dmq::ByteWriter& os) PARAM_MSG_OVERRIDE {
         ms.write(os, requestId);
         ms.write(os, id);
         ms.write(os, type);
@@ -130,7 +130,7 @@ struct ParamValueMsg PARAM_MSG_BASE {
     void  SetValue(const Value& v) { type = static_cast<uint8_t>(v.type); bits = ToBits(v); }
 
 #if defined(DMQ_SERIALIZE_SERIALIZE)
-    std::istream& read(serialize& ms, std::istream& is) PARAM_MSG_OVERRIDE {
+    dmq::ByteReader& read(serialize& ms, dmq::ByteReader& is) PARAM_MSG_OVERRIDE {
         ms.read(is, requestId);
         ms.read(is, id);
         ms.read(is, result);
@@ -138,7 +138,7 @@ struct ParamValueMsg PARAM_MSG_BASE {
         ms.read(is, type);
         return ms.read(is, bits);
     }
-    std::ostream& write(serialize& ms, std::ostream& os) PARAM_MSG_OVERRIDE {
+    dmq::ByteWriter& write(serialize& ms, dmq::ByteWriter& os) PARAM_MSG_OVERRIDE {
         ms.write(os, requestId);
         ms.write(os, id);
         ms.write(os, result);
@@ -162,7 +162,7 @@ struct ParamDescMsg PARAM_MSG_BASE {
     char     units[UNITS_LEN] = {};
 
 #if defined(DMQ_SERIALIZE_SERIALIZE)
-    std::istream& read(serialize& ms, std::istream& is) PARAM_MSG_OVERRIDE {
+    dmq::ByteReader& read(serialize& ms, dmq::ByteReader& is) PARAM_MSG_OVERRIDE {
         ms.read(is, requestId);
         ms.read(is, index);
         ms.read(is, count);
@@ -178,7 +178,7 @@ struct ParamDescMsg PARAM_MSG_BASE {
         name[NAME_LEN - 1] = units[UNITS_LEN - 1] = '\0';
         return is;
     }
-    std::ostream& write(serialize& ms, std::ostream& os) PARAM_MSG_OVERRIDE {
+    dmq::ByteWriter& write(serialize& ms, dmq::ByteWriter& os) PARAM_MSG_OVERRIDE {
         ms.write(os, requestId);
         ms.write(os, index);
         ms.write(os, count);

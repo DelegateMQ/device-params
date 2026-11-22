@@ -9,7 +9,6 @@
 #include <chrono>
 #include <functional>
 #include <iostream>
-#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -202,10 +201,11 @@ template <class T>
 static T RoundTrip(T& in)
 {
     serialize ms;
-    std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
-    in.write(ms, ss);
+    dmq::ByteWriter os;
+    in.write(ms, os);
+    dmq::ByteReader is(os);
     T out;
-    out.read(ms, ss);
+    out.read(ms, is);
     return out;
 }
 
